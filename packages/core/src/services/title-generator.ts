@@ -47,7 +47,8 @@ export async function generateAndSetTitle(
 
     if (!titleModel) {
       const config = await loadConfig(cwd);
-      titleModel = config.assistants[assistantType]?.model ?? undefined;
+      const providerModel = config.assistants[assistantType]?.model;
+      titleModel = typeof providerModel === 'string' ? providerModel : undefined;
     }
 
     // Build the title generation prompt
@@ -134,5 +135,3 @@ function truncateMessage(message: string): string {
     ? message.slice(0, MAX_TITLE_LENGTH - 3) + '...'
     : message;
 }
-
-
