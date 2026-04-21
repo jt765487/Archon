@@ -65,9 +65,9 @@ function getLog(): ReturnType<typeof createLogger> {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Max assistant text chunks to keep in batch mode (oldest are dropped) */
-const MAX_BATCH_ASSISTANT_CHUNKS = 20;
+const MAX_BATCH_ASSISTANT_CHUNKS = 1000; // Increased for large model responses
 /** Max total chunks (assistant + tool) to keep in batch mode */
-const MAX_BATCH_TOTAL_CHUNKS = 200;
+const MAX_BATCH_TOTAL_CHUNKS = 5000; // Increased for long conversations
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

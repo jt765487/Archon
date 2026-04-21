@@ -1,4 +1,10 @@
 import { createLogger } from '@archon/paths';
+import { homedir } from 'os';
+import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
+
+const log = createLogger('pi-provider');
+
 import {
   AuthStorage,
   ModelRegistry,
@@ -24,6 +30,38 @@ import { resolvePiSession } from './session-resolver';
 import { createArchonUIBridge, createArchonUIContext } from './ui-context-stub';
 
 /**
+ * Custom model config from ~/.pi/agent/models.json
+ */
+interface CustomProviderConfig {
+  baseUrl: string;
+  api: string;
+  apiKey?: string;
+  models: { id: string; name: string; toolCalling?: boolean }[];
+}
+
+interface CustomModelsConfig {
+  providers: Record<string, CustomProviderConfig>;
+}
+
+/**
+ * Load custom provider config from ~/.pi/agent/models.json
+ */
+function loadCustomProviderConfig(provider: string): CustomProviderConfig | undefined {
+  const modelsJsonPath = join(homedir(), '.pi', 'agent', 'models.json');
+  if (!existsSync(modelsJsonPath)) {
+    return undefined;
+  }
+  try {
+    const content = readFileSync(modelsJsonPath, 'utf-8');
+    const config = JSON.parse(content) as CustomModelsConfig;
+    return config.providers[provider];
+  } catch (err) {
+    log.warn({ err, modelsJsonPath }, 'pi.load_custom_config_failed');
+    return undefined;
+  }
+}
+
+/**
  * Map Pi provider id → env var name used by pi-ai's getEnvApiKey().
  * Kept small and explicit: v1 supports the most common API-key providers.
  * OAuth flows (Anthropic subscription, Google Gemini CLI, etc.) are out of
@@ -43,6 +81,7 @@ const PI_PROVIDER_ENV_VARS: Record<string, string> = {
   xai: 'XAI_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
   huggingface: 'HUGGINGFACE_API_KEY',
+  vllm: 'VLLM_API_KEY', // Custom vllm provider
 };
 
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -145,12 +184,47 @@ export class PiProvider implements IAgentProvider {
     }
 
     // 2. Look up the Model via Pi's static catalog. `lookupPiModel` returns
-    //    undefined when not found; we guard explicitly below.
-    const model = lookupPiModel(parsed.provider, parsed.modelId);
+    //    undefined when not found. For custom models (e.g., from ~/.pi/agent/models.json),
+    //    we allow them to pass through - Pi's internal runtime will handle them.
+    let model = lookupPiModel(parsed.provider, parsed.modelId);
     if (!model) {
-      throw new Error(
-        `Pi model not found: provider='${parsed.provider}' model='${parsed.modelId}'. ` +
-          'See https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.generated.ts for the Pi model catalog.'
+      // Custom model - load config from ~/.pi/agent/models.json if available
+      log.debug(
+        { provider: parsed.provider, modelId: parsed.modelId },
+        'pi_custom_model_not_in_catalog'
+      );
+
+      // Try to load custom provider config from models.json
+      const customConfig = loadCustomProviderConfig(parsed.provider);
+
+      // Create a complete model object that matches the Model interface
+      model = {
+        id: parsed.modelId,
+        name: customConfig?.models?.find(m => m.id === parsed.modelId)?.name ?? parsed.modelId,
+        provider: parsed.provider,
+        api: (customConfig?.api ?? 'openai-completions') as Api,
+        baseUrl: customConfig?.baseUrl ?? 'http://localhost:8000/v1',
+        reasoning: false,
+        input: ['text'],
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        contextWindow: 128000,
+        maxTokens: 4096,
+        headers: {},
+      } as Model<Api>;
+
+      log.info(
+        {
+          provider: parsed.provider,
+          modelId: parsed.modelId,
+          baseUrl: model.baseUrl,
+          api: model.api,
+        },
+        'pi_custom_model_configured'
       );
     }
 
@@ -186,15 +260,22 @@ export class PiProvider implements IAgentProvider {
 
     // Fail-fast: resolve creds synchronously before spinning up a session.
     // Matches Claude's auth-error fast-fail pattern (no retry on auth failures).
+    // However, some providers (e.g., vllm, ollama) don't require authentication.
     const resolvedKey = await authStorage.getApiKey(parsed.provider);
     if (!resolvedKey) {
-      const envHint = envVarName
-        ? `Set ${envVarName} in the environment or codebase env vars (.archon/config.yaml env: section).`
-        : `Provider '${parsed.provider}' is not in the Archon adapter's env-var table — file an issue if you want a shortcut env var for it.`;
-      const loginHint = `Or run \`pi\` and type \`/login\` locally to authenticate '${parsed.provider}' via OAuth; credentials land in ~/.pi/agent/auth.json and are picked up automatically.`;
-      throw new Error(
-        `Pi auth: no credentials for provider '${parsed.provider}'. ${envHint} ${loginHint}`
-      );
+      // Check if this is a custom provider from models.json (likely no auth needed)
+      const customConfig = loadCustomProviderConfig(parsed.provider);
+      if (!customConfig) {
+        const envHint = envVarName
+          ? `Set ${envVarName} in the environment or codebase env vars (.archon/config.yaml env: section).`
+          : `Provider '${parsed.provider}' is not in the Archon adapter's env-var table — file an issue if you want a shortcut env var for it.`;
+        const loginHint = `Or run \`pi\` and type \`/login\` locally to authenticate '${parsed.provider}' via OAuth; credentials land in ~/.pi/agent/auth.json and are picked up automatically.`;
+        throw new Error(
+          `Pi auth: no credentials for provider '${parsed.provider}'. ${envHint} ${loginHint}`
+        );
+      }
+      // Custom provider without explicit auth - proceed without API key
+      log.debug({ provider: parsed.provider }, 'pi_custom_provider_no_auth_required');
     }
 
     // 4. Translate Archon nodeConfig to Pi SDK options. All three translations
@@ -265,7 +346,15 @@ export class PiProvider implements IAgentProvider {
     // when piConfig.enableExtensions is true — Pi's community extension
     // ecosystem (tools + lifecycle hooks from ~/.pi/agent/extensions/ and
     // packages installed via `pi install npm:<pkg>`).
-    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    //
+    // IMPORTANT: Use ModelRegistry.create() instead of inMemory() to load
+    // custom models from ~/.pi/agent/models.json (e.g., vllm, ollama configs).
+    const modelRegistry = ModelRegistry.create(authStorage);
+    // Log any model registry errors
+    const registryError = modelRegistry.getError();
+    if (registryError) {
+      log.warn({ error: registryError }, 'pi.model_registry_load_error');
+    }
     const settingsManager = SettingsManager.inMemory();
     // Default ON: extensions (community packages like @plannotator/pi-extension
     // or your own local ones) are a core reason users run Pi. Opt out with

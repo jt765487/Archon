@@ -1,0 +1,17 @@
+name: pi-chat
+description: |
+  Direct chat using Pi provider with vllm model.
+  Use this for simple conversations without workflow overhead.
+  Triggers: "chat", "talk", "ask", "question"
+
+provider: pi
+model: vllm/Intel/Qwen3.5-122B-A10B-int4-AutoRound
+
+nodes:
+  - id: chat
+    prompt: |
+      You are a helpful AI assistant. The user has sent this message:
+      
+      $ARGUMENTS
+      
+      Please respond helpfully and concisely.

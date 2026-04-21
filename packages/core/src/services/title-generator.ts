@@ -8,6 +8,9 @@
 import { getAgentProvider } from '@archon/providers';
 import * as conversationDb from '../db/conversations';
 import { createLogger } from '@archon/paths';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -41,7 +44,12 @@ export async function generateAndSetTitle(
     getLog().debug({ conversationDbId, assistantType }, 'title.generate_started');
 
     // Model: use TITLE_GENERATION_MODEL env var if set, otherwise let SDK use its default
-    const titleModel = process.env.TITLE_GENERATION_MODEL || undefined;
+    let titleModel = process.env.TITLE_GENERATION_MODEL || undefined;
+
+    // For Pi provider, load default model from config if not specified
+    if (assistantType === 'pi' && !titleModel) {
+      titleModel = loadDefaultPiModel();
+    }
 
     // Build the title generation prompt
     const titlePrompt = buildTitlePrompt(userMessage, workflowName);
@@ -126,4 +134,37 @@ function truncateMessage(message: string): string {
   return message.length > MAX_TITLE_LENGTH
     ? message.slice(0, MAX_TITLE_LENGTH - 3) + '...'
     : message;
+}
+
+/**
+ * Load default Pi model from ~/.archon/config.yaml
+ */
+function loadDefaultPiModel(): string | undefined {
+  try {
+    const configPath = path.join(os.homedir(), '.archon', 'config.yaml');
+    const content = fs.readFileSync(configPath, 'utf-8');
+    // Find the model line under assistants.pi section
+    const lines = content.split('\n');
+    let inPiSection = false;
+    for (const line of lines) {
+      if (/assistants:\s*$/.test(line)) {
+        inPiSection = true;
+        continue;
+      }
+      if (inPiSection && /pi:\s*$/.test(line)) {
+        continue;
+      }
+      if (inPiSection && /^\s+model:\s*/.test(line)) {
+        const match = /model:\s*(\S+)/.exec(line);
+        return match?.[1];
+      }
+      // Exit pi section if we hit another top-level key
+      if (inPiSection && /^[a-z]/.test(line) && !/^\s/.test(line)) {
+        break;
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -12,7 +12,7 @@ description: |
   - PreToolUse hooks inject architectural principles before changes
   - Different nodes have different trust levels and steering
 
-provider: claude
+provider: pi
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

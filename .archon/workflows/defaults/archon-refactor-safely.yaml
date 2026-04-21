@@ -15,7 +15,7 @@ description: |
   - PostToolUse hooks force type-check after every file change
   - Behavior verification confirms no logic changes after refactoring
 
-provider: claude
+provider: pi
 
 nodes:
   # ═══════════════════════════════════════════════════════════════
@@ -207,7 +207,6 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: execute-refactor
-    model: claude-opus-4-6[1m]
     prompt: |
       You are executing a refactoring plan with strict safety guardrails.
 

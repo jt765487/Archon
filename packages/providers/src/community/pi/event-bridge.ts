@@ -298,6 +298,7 @@ export async function* bridgeSession(
         queue.push({ kind: 'chunk', chunk });
       }
     } catch (err) {
+      getLog().error({ err, event }, 'pi.event-bridge.subscribe_error');
       queue.push({ kind: 'error', error: err as Error });
     }
   });
@@ -323,6 +324,7 @@ export async function* bridgeSession(
       queue.push({ kind: 'done' });
     },
     (err: unknown) => {
+      getLog().error({ err, prompt: prompt.slice(0, 100) }, 'pi.session.prompt_failed');
       queue.push({ kind: 'error', error: err as Error });
     }
   );

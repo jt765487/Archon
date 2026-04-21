@@ -62,7 +62,6 @@ nodes:
 
       Be specific and concrete. Each proposed node should have a clear type
       (bash, prompt, command, or loop) and a one-line description of what it does.
-    model: haiku
     allowed_tools: []
     output_format:
       type: object
@@ -109,7 +108,7 @@ nodes:
         NOT for: ...
 
       # Optional top-level settings:
-      # provider: claude    (or codex)
+      # provider: pi    (or codex)
       # model: sonnet       (or haiku, opus, etc.)
       # interactive: true   (forces foreground execution in web UI)
 
