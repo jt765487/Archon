@@ -4,8 +4,7 @@ name: e2e-mixed-providers
 description: "Tests Claude and Codex providers in the same workflow with cross-provider output refs."
 
 # Default provider is claude
-provider: claude
-model: haiku
+provider: pi
 
 nodes:
   # 1. Claude node — default provider
