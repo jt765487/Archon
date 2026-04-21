@@ -1,9 +1,8 @@
-# E2E smoke test — Codex provider
+# E2E smoke test — Pi provider
 # Verifies: provider selection, sendQuery, structured output
-name: e2e-codex-smoke
-description: "E2E smoke test for Codex provider. Runs a simple prompt + structured output node."
-provider: codex
-model: gpt-5.2
+name: e2e-pi-smoke-test
+description: "E2E smoke test for Pi provider. Runs a simple prompt + structured output node."
+provider: pi
 
 nodes:
   - id: simple

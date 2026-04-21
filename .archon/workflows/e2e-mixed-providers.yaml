@@ -1,24 +1,28 @@
-# E2E smoke test — mixed providers (Claude + Codex in same workflow)
-# Verifies: per-node provider override, cross-provider $nodeId.output refs
-name: e2e-mixed-providers
-description: "Tests Claude and Codex providers in the same workflow with cross-provider output refs."
-
-# Default provider is claude
+# E2E smoke test — Pi provider all nodes
+# Verifies: provider selection, sendQuery, structured output across all node types
+name: e2e-pi-all-nodes-smoke
+description: "E2E smoke test for Pi provider. Exercises prompt, command, bash, script, loop, and approval nodes."
 provider: pi
 
 nodes:
-  # 1. Claude node — default provider
-  - id: claude-node
-    prompt: "Say 'claude-ok' and nothing else."
-    allowed_tools: []
+  # 1. Prompt node
+  - id: prompt-node
+    prompt: "Say 'pi-ok' and nothing else."
     idle_timeout: 30000
 
-  # 2. Codex node — provider override (runs parallel with claude-node, different providers)
-  - id: codex-node
-    prompt: "Say 'codex-ok' and nothing else."
-    provider: codex
-    model: gpt-5.2
+  # 2. Structured output node
+  - id: structured-node
+    prompt: "Classify this input as 'math' or 'text': '2+2=4'. Return JSON only."
+    output_format:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: ["math", "text"]
+      required: ["category"]
+      additionalProperties: false
     idle_timeout: 30000
+    depends_on: [prompt-node]
 
   # 3. Assert both providers returned output
   - id: assert
