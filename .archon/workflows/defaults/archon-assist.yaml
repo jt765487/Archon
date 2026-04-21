@@ -6,7 +6,6 @@ description: |
   Note: Will inform user when assist mode is used for tracking.
 
 provider: pi
-model: vllm/Intel/Qwen3.5-122B-A10B-int4-AutoRound
 
 nodes:
   - id: assist

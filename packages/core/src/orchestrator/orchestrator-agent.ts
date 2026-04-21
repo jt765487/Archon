@@ -64,10 +64,12 @@ function getLog(): ReturnType<typeof createLogger> {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/** Max assistant text chunks to keep in batch mode (oldest are dropped) */
-const MAX_BATCH_ASSISTANT_CHUNKS = 1000; // Increased for large model responses
-/** Max total chunks (assistant + tool) to keep in batch mode */
-const MAX_BATCH_TOTAL_CHUNKS = 5000; // Increased for long conversations
+/** Max assistant text chunks to keep in batch mode (oldest are dropped).
+ * Each chunk is a small text delta (a few tokens). 1000 accommodates large
+ * model responses (e.g. vllm/Qwen3.5-122B) without excessive memory use. */
+const MAX_BATCH_ASSISTANT_CHUNKS = 1000;
+/** Max total chunks (assistant + tool) to keep in batch mode. */
+const MAX_BATCH_TOTAL_CHUNKS = 5000;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

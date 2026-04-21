@@ -186,6 +186,11 @@ export class PiProvider implements IAgentProvider {
     // 2. Look up the Model via Pi's static catalog. `lookupPiModel` returns
     //    undefined when not found. For custom models (e.g., from ~/.pi/agent/models.json),
     //    we allow them to pass through - Pi's internal runtime will handle them.
+    //
+    //    Load custom config once here — reused below in the auth check to avoid
+    //    reading ~/.pi/agent/models.json twice per request.
+    const customProviderConfig = loadCustomProviderConfig(parsed.provider);
+
     let model = lookupPiModel(parsed.provider, parsed.modelId);
     if (!model) {
       // Custom model - load config from ~/.pi/agent/models.json if available
@@ -194,8 +199,7 @@ export class PiProvider implements IAgentProvider {
         'pi_custom_model_not_in_catalog'
       );
 
-      // Try to load custom provider config from models.json
-      const customConfig = loadCustomProviderConfig(parsed.provider);
+      const customConfig = customProviderConfig;
 
       // Create a complete model object that matches the Model interface
       model = {
@@ -263,9 +267,8 @@ export class PiProvider implements IAgentProvider {
     // However, some providers (e.g., vllm, ollama) don't require authentication.
     const resolvedKey = await authStorage.getApiKey(parsed.provider);
     if (!resolvedKey) {
-      // Check if this is a custom provider from models.json (likely no auth needed)
-      const customConfig = loadCustomProviderConfig(parsed.provider);
-      if (!customConfig) {
+      // Custom providers from models.json (vllm, ollama) typically don't need an API key.
+      if (!customProviderConfig) {
         const envHint = envVarName
           ? `Set ${envVarName} in the environment or codebase env vars (.archon/config.yaml env: section).`
           : `Provider '${parsed.provider}' is not in the Archon adapter's env-var table — file an issue if you want a shortcut env var for it.`;
