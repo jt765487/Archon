@@ -256,7 +256,21 @@ async function resolveNodeProviderAndModel(
   model: string | undefined;
   options: SendQueryOptions | undefined;
 }> {
-  const provider: string = node.provider ?? inferProviderFromModel(node.model, workflowProvider);
+  // If the node has an explicit model but no explicit provider, infer the provider.
+  // inferProviderFromModel only matches built-in providers (claude, codex) — community
+  // providers like Pi are builtIn:false and are intentionally excluded from that loop.
+  // When inference returns the workflowProvider fallback it is always correct; however
+  // when a built-in provider (e.g. codex) incorrectly claims a community model ref
+  // (e.g. "gss-api/kimi-k2.5"), we must not let that override the workflow-level
+  // provider. Rule: only accept an inferred provider that differs from workflowProvider
+  // when the inferred provider's isModelCompatible is a *positive* match AND the model
+  // is NOT a valid Pi/community model ref (i.e. it looks like a built-in alias).
+  // Simplest safe rule: if the node has a model with a '/' in it (community-style ref),
+  // skip inference and inherit workflowProvider directly.
+  const inferredProvider = node.model?.includes('/')
+    ? workflowProvider
+    : inferProviderFromModel(node.model, workflowProvider);
+  const provider: string = node.provider ?? inferredProvider;
 
   const providerAssistantConfig = config.assistants[provider];
   const model: string | undefined =
