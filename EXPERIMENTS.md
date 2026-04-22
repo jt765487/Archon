@@ -194,18 +194,155 @@ The workflow runs entirely in an isolated git worktree under
 
 ---
 
-### Run 2 — _pending_
+### Run 2 — `gss-api/claude-sonnet-4-6` E2E — 2026-04-22
 
-**Routing model**: TBD
-**Implementation model**: TBD
-**Outcome**: —
+**Routing model**: `gss-api/claude-sonnet-4-6`
+**Implementation model**: `gss-api/claude-sonnet-4-6`
+**Workflow**: `test-app-run-2-sonnet`
+**Outcome**: ✅ PR created — [#5](https://github.com/jt765487/test-app/pull/5)
+
+**Notes**:
+
+- Workflow failed mid-run on `type-check` — worktree `.venv` missing dev deps (`pytest`, `hypothesis`)
+- Fixed by adding `install` node (`make install`) before `investigate` in all three experiment workflows
+- Resumed from the `install` node; all subsequent nodes passed first time
+- `ai-review` emitted two `⚠️ Tool read failed` and two `⚠️ Tool bash failed` warnings but recovered and completed — one loop iteration, declared "Implementation is complete and correct"
+- `create-pr` correctly staged only the three relevant files, left workflow YAMLs and `.archon/config.yaml` unstaged
+
+**Code quality**:
+
+- Clean, minimal implementation — 31 lines of source, 79 lines of tests
+- Pydantic v2 `field_validator` with `@classmethod`, correct empty-name guard
+- 6 example-based tests + 3 Hypothesis property tests covering all branches
+- All quality gates passed
+
+**Scoring** (0–5 per dimension):
+
+| Dimension       | Score | Notes                                                       |
+| --------------- | ----- | ----------------------------------------------------------- |
+| Spec compliance | 5/5   | Exact match on all acceptance criteria                      |
+| Code quality    | 5/5   | Clean, minimal, idiomatic Pydantic v2                       |
+| Test quality    | 5/5   | Full branch coverage, meaningful property tests             |
+| Independence    | 4/5   | One infra intervention (missing `install` node — now fixed) |
+| Model used      | ✅    | `gss-api/claude-sonnet-4-6` used for all AI nodes           |
+
+```bash
+bun run cli workflow run test-app-run-2-sonnet \
+  --branch experiment/run-2-sonnet-e2e \
+  --cwd /Users/john51246/GIT/TEST_APP \
+  "2"
+```
+
+---
+
+### Run 3 — `gss-api/claude-haiku-4-5` router / `gss-api/kimi-k2.5` implementer — 2026-04-22
+
+**Routing model**: `gss-api/claude-haiku-4-5`
+**Implementation model**: `gss-api/kimi-k2.5`
+**Workflow**: `test-app-run-3-haiku-kimi`
+**Outcome**: ✅ PR created — [#6](https://github.com/jt765487/test-app/pull/6)
+
+**Notes**:
+
+- Uncovered a provider-resolution bug: `inferProviderFromModel` checked only `builtIn` providers; Codex's `isModelCompatible` accepted any non-Claude model string (including Pi refs like `gss-api/kimi-k2.5`), so nodes with `model:` but no `provider:` were silently routed to Codex despite `provider: pi` at the workflow level. Fixed in `dag-executor.ts:resolveNodeProviderAndModel` — community-style model refs (containing `/`) now skip inference and inherit `workflowProvider` directly.
+- Also required `DEFAULT_AI_ASSISTANT=pi` in `~/.archon/.env` (CLI strips the repo `.env`; global env file is the correct location).
+- `create-pr` used wrong issue number (`Closes #1` instead of `Closes #2`) — likely Kimi didn't read the fetch-issue output carefully.
+- Correctly deleted `tests/test_placeholder.py` (Sonnet left it untouched).
+
+**Code quality**:
+
+- Clean, correct implementation — 38 lines of source, proper Pydantic v2 `field_validator`, full Google-style docstrings
+- 4 example tests + 1 Hypothesis property test (fewer property tests than Sonnet's 3)
+- All quality gates passed
+
+**Scoring** (0–5 per dimension):
+
+| Dimension       | Score | Notes                                                                |
+| --------------- | ----- | -------------------------------------------------------------------- |
+| Spec compliance | 4/5   | Correct implementation; PR referenced wrong issue number (#1 not #2) |
+| Code quality    | 5/5   | Clean, minimal, idiomatic — better docstrings than Sonnet            |
+| Test quality    | 4/5   | Good example coverage; only 1 Hypothesis test vs Sonnet's 3          |
+| Independence    | 4/5   | Provider routing bug required infra fix; otherwise fully autonomous  |
+| Model used      | ✅    | `gss-api/kimi-k2.5` used for all AI nodes                            |
+
+```bash
+bun run cli workflow run test-app-run-3-haiku-kimi \
+  --branch experiment/run-3-haiku-kimi \
+  --cwd /Users/john51246/GIT/TEST_APP \
+  "2"
+```
+
+---
+
+### Run 4 — `gss-api/kimi-k2.5` router / `dgx-spark` Qwen implementer — 2026-04-22
+
+**Routing model**: `gss-api/kimi-k2.5`
+**Implementation model**: `dgx-spark/Intel/Qwen3.5-122B-A10B-int4-AutoRound`
+**Workflow**: `test-app-run-4-kimi-qwen`
+**Outcome**: ✅ PR created — [#7](https://github.com/jt765487/test-app/pull/7)
+
+**Notes**:
+
+- DGX Spark Qwen used for all AI nodes (`investigate`, `ai-review`, `create-pr`) — the original goal achieved
+- Kimi K2.5 routed correctly; no truncation issues (unlike Qwen as router in Run 1)
+- PR incorrectly staged the three experiment workflow YAMLs (`.archon/workflows/test-app-run-*.yaml`) — Qwen didn't scope the `git add` to only implementation files
+- PR refs `Fixes #1` instead of `Fixes #2` — same wrong-issue-number issue as Kimi (Run 3); possibly a pattern with non-Sonnet models
+- Added `Field(min_length=1)` constraint in addition to the `field_validator` — belt-and-braces validation (slightly redundant but not wrong)
+- Whitespace-only name rejection (`v.strip()`) goes beyond spec — spec only requires non-empty, not non-whitespace
+
+**Code quality**:
+
+- 51 lines of source — most thorough docstrings of all three runs (full Args/Returns/Raises)
+- 122 lines of tests — most comprehensive: grouped into `TestGreetInput`, `TestGreetFunction`, `TestGreetHypothesis` classes
+- 4 Hypothesis property tests (more than Sonnet's 3): return type, starts with "Hello,", ends with "!", name in result
+- Extra test: whitespace-only name rejection (beyond spec but sensible)
+- Complex title test (`"Prof. John Smith"`) — good edge case
+
+**Scoring** (0–5 per dimension):
+
+| Dimension       | Score | Notes                                                                |
+| --------------- | ----- | -------------------------------------------------------------------- |
+| Spec compliance | 4/5   | Correct implementation; wrong issue # in PR; staged unrelated files  |
+| Code quality    | 5/5   | Best docstrings of all three runs; well-structured                   |
+| Test quality    | 5/5   | Most thorough — 4 Hypothesis properties, class-grouped, extra cases  |
+| Independence    | 4/5   | Provider routing infra fix (shared with Run 3); PR staging error     |
+| Model used      | ✅    | `dgx-spark/Intel/Qwen3.5-122B-A10B-int4-AutoRound` used for AI nodes |
+
+```bash
+bun run cli workflow run test-app-run-4-kimi-qwen \
+  --branch experiment/run-4-kimi-qwen \
+  --cwd /Users/john51246/GIT/TEST_APP \
+  "2"
+```
+
+---
+
+## Pre-Run Reset Checklist
+
+Run before each experiment (substitute the PR number from the previous run):
+
+```bash
+# 1. Close the previous run's PR and delete its remote branch
+gh pr close <N> --delete-branch --repo jt765487/test-app 2>/dev/null || true
+
+# 2. Clean up Archon worktrees for closed/merged branches
+cd /Users/john51246/GIT/archon
+bun run cli isolation cleanup --merged --include-closed
+
+# 3. Reset test-app local branches
+cd /Users/john51246/GIT/TEST_APP
+git checkout main && git pull origin main
+
+# 4. Confirm clean state
+git log --oneline -3
+git status
+gh pr list --repo jt765487/test-app   # should be empty
+```
 
 ---
 
 ## What to Try Next
 
-- [ ] Use `dgx-spark` for implementation nodes, `gss-api/claude-haiku-4-5` only for routing
-- [ ] Try `gss-api/deepseek-v3` for implementation
-- [ ] Try `gss-api/claude-sonnet-4-6` as full end-to-end (baseline for comparison)
-- [ ] Fix Qwen routing truncation (stop token / generation config issue)
 - [ ] Try a harder issue (multiple files, more complex logic)
+- [ ] Fix Qwen routing truncation (stop token / generation config issue) to enable Qwen E2E
+- [ ] Try `gss-api/deepseek-v3` for implementation
