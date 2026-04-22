@@ -98,8 +98,9 @@ export interface OrchestratorCommands {
  */
 function findCodebaseByName(
   codebases: readonly Codebase[],
-  projectName: string
+  projectName: string | undefined
 ): Codebase | undefined {
+  if (!projectName) return undefined;
   const projectLower = projectName.toLowerCase();
   return codebases.find(c => {
     const nameLower = c.name.toLowerCase();
@@ -126,11 +127,16 @@ export function parseOrchestratorCommands(
   // (e.g., when AI appends tool call indicators or continues text after the command).
   // --project MUST appear before --prompt; this order is specified in the system prompt
   // template. Commands with --prompt before --project will not match.
-  const invokePattern = /^\/invoke-workflow\s+(\S+)\s+--project[\s=]+(\S+)/m;
+  //
+  // Fallback: if the model outputs /invoke-workflow {name} without --project
+  // (common with smaller/local models that don't follow the full format), auto-select
+  // the project when only one codebase is registered.
+  const invokePattern = /^\/invoke-workflow\s+(\S+)(?:\s+--project[\s=]+(\S+))?/m;
   const invokeMatch = invokePattern.exec(response);
   if (invokeMatch) {
     const workflowName = invokeMatch[1].trim();
-    const projectName = invokeMatch[2].trim();
+    const projectName =
+      invokeMatch[2]?.trim() ?? (codebases.length === 1 ? codebases[0].name : undefined);
 
     // Validate workflow exists
     const workflow = findWorkflow(workflowName, [...workflows]);
@@ -160,6 +166,37 @@ export function parseOrchestratorCommands(
           remainingMessage,
           synthesizedPrompt,
         };
+      }
+    }
+  }
+
+  // Fallback: model output `/invoke-workflow` with nothing after it (common with
+  // smaller/local models like Qwen that truncate the line). Scan the response text
+  // for a workflow name that was mentioned in prose (e.g. "I'll use the **archon-fix-github-issue** workflow").
+  if (!result.workflowInvocation && /\/invoke-workflow\s*$/m.test(response)) {
+    const bareCodebase = codebases.length === 1 ? codebases[0] : undefined;
+    if (bareCodebase) {
+      for (const wf of workflows) {
+        // Match workflow name mentioned in the response text (bold, backtick, or plain)
+        const namePattern = new RegExp(
+          '(?:\\*\\*|`|\\s)' + wf.name.replace(/-/g, '[\\s-]') + '(?:\\*\\*|`|\\s|$)',
+          'i'
+        );
+        if (namePattern.test(response)) {
+          const commandIndex = response.search(/\/invoke-workflow\s*$/m);
+          const remainingMessage = response.slice(0, commandIndex).trim();
+          getLog().info(
+            { workflowName: wf.name, project: bareCodebase.name },
+            'orchestrator.invoke_bare_workflow_recovered'
+          );
+          result.workflowInvocation = {
+            workflowName: wf.name,
+            projectName: bareCodebase.name,
+            remainingMessage,
+            synthesizedPrompt: undefined,
+          };
+          break;
+        }
       }
     }
   }
@@ -854,9 +891,14 @@ export async function handleMessage(
       }
     }
 
+    // When workflows are available the prompt is a routing prompt — restrict tools
+    // to none so the model must respond with /invoke-workflow rather than executing
+    // bash commands directly. Without this, smaller/local models (e.g. Qwen) ignore
+    // the routing instructions and implement the task themselves.
     const requestOptions: SendQueryOptions = {
       assistantConfig: config.assistants[providerKey] ?? {},
       env: Object.keys(effectiveEnv).length > 0 ? effectiveEnv : undefined,
+      nodeConfig: workflows.length > 0 ? { allowed_tools: [] } : undefined,
     };
 
     const mode = platform.getStreamingMode();

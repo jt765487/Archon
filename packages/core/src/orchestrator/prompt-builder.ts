@@ -76,10 +76,28 @@ export function buildRoutingRules(): string {
  * Build the routing rules section, optionally scoped to a specific project.
  * When projectName is provided, rule #4 defaults to that project instead of asking.
  */
-export function buildRoutingRulesWithProject(projectName?: string): string {
+export function buildRoutingRulesWithProject(
+  projectName?: string,
+  singleProject?: boolean
+): string {
   const rule4 = projectName
     ? `4. If ambiguous which project → use **${projectName}** (the active project)`
     : '4. If ambiguous which project → ask the user';
+
+  // When there is only one registered project, simplify the invocation format so
+  // smaller/local models don't have to remember the --project flag.
+  const invokeFormat = singleProject
+    ? '/invoke-workflow {workflow-name} --prompt "{task description}"'
+    : '/invoke-workflow {workflow-name} --project {project-name} --prompt "{task description}"';
+
+  const projectRule = singleProject
+    ? '- --project is optional when only one project is registered; omit it if unsure.'
+    : '- Use the project NAME (e.g., "my-project"), not an ID or path.';
+
+  const exampleProject = projectName ?? 'my-project';
+  const exampleInvoke = singleProject
+    ? '/invoke-workflow archon-assist --prompt "Analyze the orchestrator module architecture: explain how it routes messages, manages sessions, and dispatches workflows to AI clients"'
+    : `/invoke-workflow archon-assist --project ${exampleProject} --prompt "Analyze the orchestrator module architecture: explain how it routes messages, manages sessions, and dispatches workflows to AI clients"`;
 
   return `## Routing Rules
 
@@ -93,10 +111,10 @@ ${rule4}
 ## Workflow Invocation Format
 
 When invoking a workflow, output the command as the VERY LAST line of your response:
-/invoke-workflow {workflow-name} --project {project-name} --prompt "{task description}"
+${invokeFormat}
 
 Rules:
-- Use the project NAME (e.g., "my-project"), not an ID or path.
+- ${projectRule}
 - The --prompt MUST be a complete, self-contained task description that fully captures the user's intent.
 - Synthesize the prompt from conversation context — do NOT use vague references like "do what we discussed" or "yes, go ahead."
 - The prompt should make sense to someone with NO knowledge of the conversation history.
@@ -109,7 +127,7 @@ Routing behavior:
 
 Example (clear intent):
 I'll analyze the orchestrator module architecture for you.
-/invoke-workflow archon-assist --project my-project --prompt "Analyze the orchestrator module architecture: explain how it routes messages, manages sessions, and dispatches workflows to AI clients"
+${exampleInvoke}
 
 Example (ambiguous — answer directly):
 User: "What do you think about adding dark mode?"
@@ -166,7 +184,7 @@ You can answer questions directly or invoke workflows for structured development
   prompt += '## Available Workflows\n\n';
   prompt += formatWorkflowSection(workflows);
 
-  prompt += buildRoutingRules();
+  prompt += buildRoutingRulesWithProject(undefined, codebases.length === 1);
 
   return prompt;
 }
@@ -207,7 +225,7 @@ ${formatProjectSection(scopedCodebase)}
   prompt += '## Available Workflows\n\n';
   prompt += formatWorkflowSection(workflows);
 
-  prompt += buildRoutingRulesWithProject(scopedCodebase.name);
+  prompt += buildRoutingRulesWithProject(scopedCodebase.name, allCodebases.length === 1);
 
   return prompt;
 }
